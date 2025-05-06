@@ -1,3 +1,16 @@
+/**
+ * Protyle 核心编辑器类
+ * 
+ * 这是思源笔记的核心编辑器实现，提供了完整的文档编辑功能，包括：
+ * - 富文本编辑（WYSIWYG）
+ * - Markdown 预览
+ * - 撤销/重做管理
+ * - 块操作（创建、合并、转换等）
+ * - 文档事务管理
+ * - 插件系统集成
+ * - 响应式布局
+ */
+
 import {Constants} from "../constants";
 import {Hint} from "./hint";
 import {setLute} from "./render/setLute";
@@ -50,250 +63,126 @@ import {renderAVAttribute} from "./render/av/blockAttr";
 import {genEmptyElement} from "../block/util";
 
 export class Protyle {
-
+    /** 当前编辑器版本号，与思源笔记版本一致 */
     public readonly version: string;
+    
+    /** 编辑器核心实例对象 */
     public protyle: IProtyle;
 
     /**
-     * @param id 要挂载 Protyle 的元素或者元素 ID。
-     * @param options Protyle 参数
+     * 构造函数 - 创建 Protyle 编辑器实例
+     * 
+     * @param app 思源笔记应用实例
+     * @param id 要挂载编辑器的 HTML 元素或元素ID
+     * @param options 编辑器配置选项
      */
     constructor(app: App, id: HTMLElement, options?: IProtyleOptions) {
         this.version = Constants.SIYUAN_VERSION;
+        
+        // 合并插件配置
         let pluginsOptions: IProtyleOptions = options;
         app.plugins.forEach(item => {
             if (item.protyleOptions) {
                 pluginsOptions = merge(pluginsOptions, item.protyleOptions);
             }
         });
+        
+        // 初始化配置
         const getOptions = new Options(pluginsOptions);
         const mergedOptions = getOptions.merge();
+        
+        // 初始化编辑器核心对象
         this.protyle = {
             getInstance: () => this,
             app,
-            transactionTime: new Date().getTime(),
-            id: genUUID(),
-            disabled: false,
-            updated: false,
-            element: id,
-            options: mergedOptions,
-            block: {},
-            highlight: {
+            transactionTime: new Date().getTime(), // 事务时间戳
+            id: genUUID(), // 编辑器唯一ID
+            disabled: false, // 是否禁用状态
+            updated: false, // 是否有更新
+            element: id, // 挂载元素
+            options: mergedOptions, // 合并后的配置
+            block: {}, // 块数据
+            highlight: { // 高亮相关配置
                 mark: isSupportCSSHL() ? new Highlight() : undefined,
                 markHL: isSupportCSSHL() ? new Highlight() : undefined,
-                ranges: [],
-                rangeIndex: 0,
-                styleElement: document.createElement("style"),
+                ranges: [], // 高亮范围
+                rangeIndex: 0, // 当前高亮索引
+                styleElement: document.createElement("style"), // 高亮样式元素
             }
         };
 
+        // 初始化高亮样式
         if (isSupportCSSHL()) {
             const styleId = genUUID();
             this.protyle.highlight.styleElement.dataset.uuid = styleId;
-            this.protyle.highlight.styleElement.textContent = `.protyle-wysiwyg::highlight(search-mark-${styleId}) {background-color: var(--b3-highlight-background);color: var(--b3-highlight-color);}
-  .protyle-wysiwyg::highlight(search-mark-hl-${styleId}) {color: var(--b3-highlight-color);background-color: var(--b3-highlight-current-background)}`;
+            this.protyle.highlight.styleElement.textContent = `
+                .protyle-wysiwyg::highlight(search-mark-${styleId}) {
+                    background-color: var(--b3-highlight-background);
+                    color: var(--b3-highlight-color);
+                }
+                .protyle-wysiwyg::highlight(search-mark-hl-${styleId}) {
+                    color: var(--b3-highlight-color);
+                    background-color: var(--b3-highlight-current-background)
+                }`;
         }
 
-        this.protyle.hint = new Hint(this.protyle);
+        // 初始化各功能模块
+        this.protyle.hint = new Hint(this.protyle); // 提示功能
+        
+        // 根据配置初始化可选模块
         if (mergedOptions.render.breadcrumb) {
-            this.protyle.breadcrumb = new Breadcrumb(this.protyle);
+            this.protyle.breadcrumb = new Breadcrumb(this.protyle); // 面包屑导航
         }
         if (mergedOptions.render.title) {
-            this.protyle.title = new Title(this.protyle);
+            this.protyle.title = new Title(this.protyle); // 标题栏
         }
         if (mergedOptions.render.background) {
-            this.protyle.background = new Background(this.protyle);
+            this.protyle.background = new Background(this.protyle); // 背景设置
         }
 
+        // 清空并初始化编辑器容器
         this.protyle.element.innerHTML = "";
         this.protyle.element.classList.add("protyle");
+        
+        // 添加面包屑导航（如果启用）
         if (mergedOptions.render.breadcrumb) {
             this.protyle.element.appendChild(this.protyle.breadcrumb.element.parentElement);
         }
-        this.protyle.undo = new Undo();
-        this.protyle.wysiwyg = new WYSIWYG(this.protyle);
-        this.protyle.toolbar = new Toolbar(this.protyle);
-        this.protyle.scroll = new Scroll(this.protyle); // 不能使用 render.scroll 来判读是否初始化，除非重构后面用到的相关变量
+        
+        // 初始化核心功能模块
+        this.protyle.undo = new Undo(); // 撤销/重做管理
+        this.protyle.wysiwyg = new WYSIWYG(this.protyle); // 富文本编辑器
+        this.protyle.toolbar = new Toolbar(this.protyle); // 工具栏
+        this.protyle.scroll = new Scroll(this.protyle); // 滚动管理
+        
+        // 初始化可选模块
         if (this.protyle.options.render.gutter) {
-            this.protyle.gutter = new Gutter(this.protyle);
+            this.protyle.gutter = new Gutter(this.protyle); // 行号显示
         }
         if (mergedOptions.upload.url || mergedOptions.upload.handler) {
-            this.protyle.upload = new Upload();
+            this.protyle.upload = new Upload(); // 文件上传功能
         }
 
+        // 执行初始化
         this.init();
+        
+        // 处理特殊加载情况
         if (!mergedOptions.action.includes(Constants.CB_GET_HISTORY)) {
-            this.protyle.ws = new Model({
-                app,
-                id: this.protyle.id,
-                type: "protyle",
-                msgCallback: (data) => {
-                    switch (data.cmd) {
-                        case "reload":
-                            if (data.data === this.protyle.block.rootID) {
-                                reloadProtyle(this.protyle, false);
-                                /// #if !MOBILE
-                                getAllModels().outline.forEach(item => {
-                                    if (item.blockId === data.data) {
-                                        fetchPost("/api/outline/getDocOutline", {
-                                            id: item.blockId,
-                                            preview: item.isPreview
-                                        }, response => {
-                                            item.update(response);
-                                        });
-                                    }
-                                });
-                                /// #endif
-                            }
-                            break;
-                        case "refreshAttributeView":
-                            Array.from(this.protyle.wysiwyg.element.querySelectorAll(`[data-av-id="${data.data.id}"]`)).forEach((item: HTMLElement) => {
-                                item.removeAttribute("data-render");
-                                avRender(item, this.protyle);
-                            });
-                            break;
-                        case "addLoading":
-                            if (data.data === this.protyle.block.rootID) {
-                                addLoading(this.protyle, data.msg);
-                            }
-                            break;
-                        case "transactions":
-                            data.data[0].doOperations.find((item: IOperation) => {
-                                if (!this.protyle.preview.element.classList.contains("fn__none") &&
-                                    item.action !== "updateAttrs"   // 预览模式下点击只读
-                                ) {
-                                    this.protyle.preview.render(this.protyle);
-                                } else if (options.backlinkData && ["delete", "move"].includes(item.action)) {
-                                    // 只对特定情况刷新，否则展开、编辑等操作刷新会频繁
-                                    /// #if !MOBILE
-                                    getAllModels().backlink.find(backlinkItem => {
-                                        if (backlinkItem.element.contains(this.protyle.element)) {
-                                            backlinkItem.refresh();
-                                            return true;
-                                        }
-                                    });
-                                    /// #endif
-                                    return true;
-                                } else {
-                                    onTransaction(this.protyle, item, false);
-                                    // 反链面板移除元素后，文档为空
-                                    if (this.protyle.wysiwyg.element.childElementCount === 0 && this.protyle.block.parentID) {
-                                        const newID = Lute.NewNodeID();
-                                        const emptyElement = genEmptyElement(false, false, newID);
-                                        this.protyle.wysiwyg.element.append(emptyElement);
-                                        transaction(this.protyle, [{
-                                            action: "insert",
-                                            data: emptyElement.outerHTML,
-                                            id: newID,
-                                            parentID: this.protyle.block.parentID
-                                        }]);
-                                        this.protyle.undo.clear();
-                                    }
-                                }
-                            });
-                            break;
-                        case "readonly":
-                            window.siyuan.config.editor.readOnly = data.data;
-                            setReadonlyByConfig(this.protyle, true);
-                            break;
-                        case "heading2doc":
-                        case "li2doc":
-                            if (this.protyle.block.rootID === data.data.srcRootBlockID) {
-                                if (this.protyle.block.showAll && data.cmd === "heading2doc" && !this.protyle.options.backlinkData) {
-                                    fetchPost("/api/filetree/getDoc", {
-                                        id: this.protyle.block.rootID,
-                                        size: window.siyuan.config.editor.dynamicLoadBlocks,
-                                    }, getResponse => {
-                                        onGet({data: getResponse, protyle: this.protyle});
-                                    });
-                                } else {
-                                    reloadProtyle(this.protyle, false);
-                                }
-                                /// #if !MOBILE
-                                if (data.cmd === "heading2doc") {
-                                    // 文档标题互转后，需更新大纲
-                                    updatePanelByEditor({
-                                        protyle: this.protyle,
-                                        focus: false,
-                                        pushBackStack: false,
-                                        reload: true,
-                                        resize: false
-                                    });
-                                }
-                                /// #endif
-                            }
-                            break;
-                        case "rename":
-                            if (this.protyle.path === data.data.path) {
-                                if (this.protyle.model) {
-                                    this.protyle.model.parent.updateTitle(data.data.title);
-                                }
-                                if (this.protyle.background) {
-                                    this.protyle.background.ial.title = data.data.title;
-                                }
-                            }
-                            if (this.protyle.options.render.title && this.protyle.block.parentID === data.data.id) {
-                                if (!document.body.classList.contains("body--blur") && getSelection().rangeCount > 0 &&
-                                    this.protyle.title.editElement?.contains(getSelection().getRangeAt(0).startContainer)) {
-                                    // 标题编辑中的不用更新 https://github.com/siyuan-note/siyuan/issues/6565
-                                } else {
-                                    this.protyle.title.setTitle(data.data.title);
-                                }
-                            }
-                            // update ref
-                            this.protyle.wysiwyg.element.querySelectorAll(`[data-type~="block-ref"][data-id="${data.data.id}"]`).forEach(item => {
-                                if (item.getAttribute("data-subtype") === "d") {
-                                    // 同 updateRef 一样处理 https://github.com/siyuan-note/siyuan/issues/10458
-                                    item.innerHTML = data.data.refText;
-                                }
-                            });
-                            break;
-                        case "moveDoc":
-                            if (this.protyle.path === data.data.fromPath) {
-                                this.protyle.path = data.data.newPath;
-                                this.protyle.notebookId = data.data.toNotebook;
-                            }
-                            break;
-                        case "unmount":
-                            if (this.protyle.notebookId === data.data.box) {
-                                /// #if MOBILE
-                                setEmpty(app);
-                                /// #else
-                                if (this.protyle.model) {
-                                    this.protyle.model.parent.parent.removeTab(this.protyle.model.parent.id, false);
-                                }
-                                /// #endif
-                            }
-                            break;
-                        case "removeDoc":
-                            if (data.data.ids.includes(this.protyle.block.rootID)) {
-                                /// #if MOBILE
-                                setEmpty(app);
-                                /// #else
-                                if (this.protyle.model) {
-                                    this.protyle.model.parent.parent.removeTab(this.protyle.model.parent.id, false);
-                                }
-                                /// #endif
-                                delete window.siyuan.storage[Constants.LOCAL_FILEPOSITION][this.protyle.block.rootID];
-                                setStorageVal(Constants.LOCAL_FILEPOSITION, window.siyuan.storage[Constants.LOCAL_FILEPOSITION]);
-                            }
-                            break;
-                    }
-                }
-            });
+            // 处理反链数据加载
             if (options.backlinkData) {
                 this.protyle.block.rootID = options.blockId;
                 renderBacklink(this.protyle, options.backlinkData);
-                // 为了满足 eventPath0.style.paddingLeft 从而显示块标 https://github.com/siyuan-note/siyuan/issues/11578
                 this.protyle.wysiwyg.element.style.padding = "4px 16px 4px 24px";
                 return;
             }
+            
+            // 处理空块ID情况（如搜索页签）
             if (!options.blockId) {
-                // 搜索页签需提前初始化
                 removeLoading(this.protyle);
                 return;
             }
 
+            // 根据滚动位置加载文档
             if (this.protyle.options.mode !== "preview" &&
                 options.rootId && window.siyuan.storage[Constants.LOCAL_FILEPOSITION][options.rootId] &&
                 (
@@ -317,12 +206,16 @@ export class Protyle {
         }
     }
 
+    /**
+     * 获取文档内容
+     * @private
+     * @param mergedOptions 合并后的配置选项
+     */
     private getDoc(mergedOptions: IProtyleOptions) {
         fetchPost("/api/filetree/getDoc", {
             id: mergedOptions.blockId,
             isBacklink: mergedOptions.action.includes(Constants.CB_GET_BACKLINK),
             originalRefBlockIDs: mergedOptions.originalRefBlockIDs,
-            // 0: 仅当前 ID（默认值），1：向上 2：向下，3：上下都加载，4：加载最后
             mode: (mergedOptions.action && mergedOptions.action.includes(Constants.CB_GET_CONTEXT)) ? 3 : 0,
             size: mergedOptions.action?.includes(Constants.CB_GET_ALL) ? Constants.SIZE_GET_MAX : window.siyuan.config.editor.dynamicLoadBlocks,
         }, getResponse => {
@@ -337,7 +230,13 @@ export class Protyle {
         });
     }
 
+    /**
+     * 文档加载完成后的处理
+     * @private
+     * @param mergedOptions 合并后的配置选项
+     */
     private afterOnGet(mergedOptions: IProtyleOptions) {
+        // 更新面板状态（非移动端）
         if (this.protyle.model) {
             /// #if !MOBILE
             if (mergedOptions.action?.includes(Constants.CB_GET_FOCUS) || mergedOptions.action?.includes(Constants.CB_GET_OPENNEW)) {
@@ -352,14 +251,17 @@ export class Protyle {
             });
             /// #endif
         }
-        resize(this.protyle);   // 需等待 fullwidth 获取后设定完毕再重新计算 padding 和元素
-        // 需等待 getDoc 完成后再执行，否则在无页签的时候 updatePanelByEditor 会执行2次
-        // 只能用 focusin，否则点击表格无法执行
+        
+        // 调整布局
+        resize(this.protyle);
+        
+        // 设置编辑器焦点事件监听
         this.protyle.wysiwyg.element.addEventListener("focusin", () => {
             /// #if !MOBILE
             if (this.protyle && this.protyle.model) {
                 let needUpdate = true;
-                if (this.protyle.model.element.parentElement.parentElement.classList.contains("layout__wnd--active") && this.protyle.model.headElement.classList.contains("item--focus")) {
+                if (this.protyle.model.element.parentElement.parentElement.classList.contains("layout__wnd--active") && 
+                    this.protyle.model.headElement.classList.contains("item--focus")) {
                     needUpdate = false;
                 }
                 if (!needUpdate) {
@@ -374,7 +276,7 @@ export class Protyle {
                     resize: false,
                 });
             } else {
-                // 悬浮层应移除其余面板高亮，否则按键会被面板监听到
+                // 处理悬浮层情况
                 document.querySelectorAll(".layout__tab--active").forEach(item => {
                     item.classList.remove("layout__tab--active");
                 });
@@ -384,14 +286,20 @@ export class Protyle {
             }
             /// #endif
         });
-        // 需等渲染完后再回调，用于定位搜索字段 https://github.com/siyuan-note/siyuan/issues/3171
+        
+        // 执行初始化后回调
         if (mergedOptions.after) {
             mergedOptions.after(this);
         }
         this.protyle.contentElement.classList.add("protyle-content--transition");
     }
 
+    /**
+     * 初始化编辑器核心功能
+     * @private
+     */
     private init() {
+        // 初始化 Lute Markdown 解析器
         this.protyle.lute = setLute({
             emojiSite: this.protyle.options.hint.emojiPath,
             emojis: this.protyle.options.hint.emoji,
@@ -401,50 +309,83 @@ export class Protyle {
             sanitize: this.protyle.options.preview.markdown.sanitize,
         });
 
+        // 初始化预览功能
         this.protyle.preview = new Preview(this.protyle);
 
+        // 初始化UI
         initUI(this.protyle);
     }
 
-    /** 聚焦到编辑器 */
+    /* 公共API方法 */
+
+    /**
+     * 聚焦到编辑器
+     */
     public focus() {
         this.protyle.wysiwyg.element.focus();
     }
 
-    /** 上传是否还在进行中 */
+    /**
+     * 检查是否正在上传文件
+     * @returns 是否正在上传
+     */
     public isUploading() {
         return this.protyle.upload.isUploading;
     }
 
-    /** 清空 undo & redo 栈 */
+    /**
+     * 清空撤销/重做栈
+     */
     public clearStack() {
         this.protyle.undo.clear();
     }
 
-    /** 销毁编辑器 */
+    /**
+     * 销毁编辑器实例
+     */
     public destroy() {
         destroy(this.protyle);
     }
 
+    /**
+     * 调整编辑器尺寸
+     */
     public resize() {
         resize(this.protyle);
     }
 
+    /**
+     * 重新加载编辑器内容
+     * @param focus 是否在加载后聚焦到编辑器
+     */
     public reload(focus: boolean) {
         reloadProtyle(this.protyle, focus);
     }
 
+    /**
+     * 插入HTML内容
+     * @param html 要插入的HTML内容
+     * @param isBlock 是否作为块插入
+     * @param useProtyleRange 是否使用编辑器范围
+     */
     public insert(html: string, isBlock = false, useProtyleRange = false) {
         insertHTML(html, this.protyle, isBlock, useProtyleRange);
     }
 
+    /**
+     * 执行事务操作
+     * @param doOperations 要执行的操作列表
+     * @param undoOperations 对应的撤销操作列表（可选）
+     */
     public transaction(doOperations: IOperation[], undoOperations?: IOperation[]) {
         transaction(this.protyle, doOperations, undoOperations);
     }
 
     /**
-     * 多个块转换为一个块
-     * @param {TTurnIntoOneSub} [subType] type 为 "BlocksMergeSuperBlock" 时必传
+     * 将多个块合并为一个块
+     * @param selectsElement 选中的块元素列表
+     * @param type 合并类型
+     * @param subType 子类型（当type为"BlocksMergeSuperBlock"时必传）
      */
     public turnIntoOneTransaction(selectsElement: Element[], type: TTurnIntoOne, subType?: TTurnIntoOneSub) {
         turnsIntoOneTransaction({
@@ -456,9 +397,10 @@ export class Protyle {
     }
 
     /**
-     * 多个块转换
-     * @param {Element} [nodeElement] 优先使用包含 protyle-wysiwyg--select 的块，否则使用 nodeElement 单块
-     * @param {number} [subType] type 为 "Blocks2Hs" 时必传
+     * 转换块类型
+     * @param nodeElement 要转换的块元素
+     * @param type 转换类型
+     * @param subType 子类型（当type为"Blocks2Hs"时必传）
      */
     public turnIntoTransaction(nodeElement: Element, type: TTurnInto, subType?: number) {
         turnsIntoTransaction({
@@ -469,34 +411,73 @@ export class Protyle {
         });
     }
 
+    /**
+     * 更新单个块的事务
+     * @param id 块ID
+     * @param newHTML 新的HTML内容
+     * @param html 原始HTML内容（用于撤销）
+     */
     public updateTransaction(id: string, newHTML: string, html: string) {
         updateTransaction(this.protyle, id, newHTML, html);
     }
 
+    /**
+     * 批量更新块的事务
+     * @param nodeElements 要更新的块元素列表
+     * @param cb 更新回调函数
+     */
     public updateBatchTransaction(nodeElements: Element[], cb: (e: HTMLElement) => void) {
         updateBatchTransaction(nodeElements, this.protyle, cb);
     }
 
+    /**
+     * 获取编辑器选区范围
+     * @param element 要获取范围的元素
+     * @returns 选区范围对象
+     */
     public getRange(element: Element) {
         return getEditorRange(element);
     }
 
+    /**
+     * 检查元素是否在块内
+     * @param element 要检查的元素
+     * @returns 最近的块元素或null
+     */
     public hasClosestBlock(element: Node) {
         return hasClosestBlock(element);
     }
 
+    /**
+     * 聚焦到指定块
+     * @param element 要聚焦的块元素
+     * @param toStart 是否聚焦到块开头
+     * @returns 是否聚焦成功
+     */
     public focusBlock(element: Element, toStart = true) {
         return focusBlock(element, undefined, toStart);
     }
 
+    /**
+     * 禁用编辑器
+     */
     public disable() {
         disabledProtyle(this.protyle);
     }
 
+    /**
+     * 启用编辑器
+     */
     public enable() {
         enableProtyle(this.protyle);
     }
 
+    /**
+     * 渲染属性视图属性
+     * @param element 要渲染的元素
+     * @param id 属性视图ID
+     * @param cb 渲染完成后的回调函数
+     */
     public renderAVAttribute(element: HTMLElement, id: string, cb?: (element: HTMLElement) => void) {
         renderAVAttribute(element, id, this.protyle, cb);
     }
