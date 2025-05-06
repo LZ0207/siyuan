@@ -1,19 +1,18 @@
-import {focusBlock, focusByWbr} from "../util/selection";
-import {Constants} from "../../constants";
-import * as dayjs from "dayjs";
-import {transaction, updateTransaction} from "./transaction";
-import {mathRender} from "../render/mathRender";
-import {highlightRender} from "../render/highlightRender";
-import {getContenteditableElement, hasNextSibling, isNotEditBlock} from "./getBlock";
-import {genEmptyBlock} from "../../block/util";
-import {blockRender} from "../render/blockRender";
-import {hideElements} from "../ui/hideElements";
-import {hasClosestByAttribute, hasClosestByClassName, isInEmbedBlock} from "../util/hasClosest";
-import {fetchPost, fetchSyncPost} from "../../util/fetch";
-import {headingTurnIntoList, turnIntoTaskList} from "./turnIntoList";
-import {updateAVName} from "../render/av/action";
-import {setFold} from "../../menus/protyle";
-
++ /**
++  * 处理输入操作的核心函数
++  * @description 该函数负责处理在特定元素中的输入操作，包括不同类型块（如AV块、代码块、数学公式块等）的输入处理，以及相关的更新事务、渲染和聚焦操作等。
++  * @param {IProtyle} protyle - 代表富文本编辑器的相关配置和状态对象。
++  * @param {HTMLElement} blockElement - 当前输入所在的HTML元素块。
++  * @param {Range} range - 当前输入的范围对象。
++  * @param {boolean} [needRender=true] - 标识是否需要进行渲染，默认为true。
++  * @param {InputEvent} [event] - 输入事件对象，可选。
++  * @returns {void} 无返回值。
++  * @example
++  * // 假设已经有定义好的protyle、blockElement、range等对象
++  * input(protyle, blockElement, range);
++  * // 或传入更多参数
++  * input(protyle, blockElement, range, false, new InputEvent('input'));
++  */
 export const input = async (protyle: IProtyle, blockElement: HTMLElement, range: Range, needRender = true, event?: InputEvent) => {
     if (!blockElement.parentElement) {
         // 不同 windows 版本下输入法会多次触发 input，导致 outerhtml 赋值的块丢失
@@ -276,6 +275,17 @@ export const input = async (protyle: IProtyle, blockElement: HTMLElement, range:
     updateInput(html, protyle, id);
 };
 
++ /**
++  * 更新输入相关操作的函数
++  * @description 该函数用于生成输入操作和撤销操作的记录，并通过事务处理函数进行相应处理，同时更新wysiwyg的lastHTMLs记录。
++  * @param {string} html - 当前块的HTML字符串。
++  * @param {IProtyle} protyle - 代表富文本编辑器的相关配置和状态对象。
++  * @param {string} id - 当前块的唯一标识ID。
++  * @returns {void} 无返回值。
++  * @example
++  * // 假设已经有定义好的html、protyle、id等变量
++  * updateInput(html, protyle, id);
++  */
 const updateInput = (html: string, protyle: IProtyle, id: string) => {
     const tempElement = document.createElement("template");
     tempElement.innerHTML = html;
@@ -307,7 +317,7 @@ const updateInput = (html: string, protyle: IProtyle, id: string) => {
                 action: "insert",
                 data: item.outerHTML,
                 id: tempId,
-                previousID: index === 0 ? firstElement?.previousElementSibling?.getAttribute("data-node-id") : item.previousElementSibling.getAttribute("data-node-id"),
+                previousID: index === 0? firstElement?.previousElementSibling?.getAttribute("data-node-id") : item.previousElementSibling.getAttribute("data-node-id"),
                 parentID: firstElement?.parentElement.getAttribute("data-node-id") || protyle.block.parentID
             });
             undoOperations.push({
